@@ -1,0 +1,23 @@
+# STM32CubeIDE build output
+firmware/Debug/
+firmware/Release/
+*.o
+*.d
+*.su
+*.elf
+*.map
+*.list
+*.bin
+*.hex
+
+# IDE workspace state
+.metadata/
+firmware/.settings/language.settings.xml
+
+# Host build (tests)
+build/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
