@@ -45,6 +45,7 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 int counter = 5;
+volatile uint32_t button_count = 0;
 
 /* USER CODE END PV */
 
@@ -103,7 +104,9 @@ int main(void) {
 	MX_GPIO_Init();
 	MX_USART2_UART_Init();
 	/* USER CODE BEGIN 2 */
-
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0;
+	DWT->CTRL = DWT_CTRL_CYCCNTENA_Msk;
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -116,9 +119,8 @@ int main(void) {
 		HAL_Delay(1000);
 		counter++;
 		char msg[64];
-		snprintf(msg, sizeof(msg), "cryo-node alive, counter = %d\r\n",
-				counter);
-//		HAL_UART_Transmit(&huart2, (uint8_t*) msg, strlen(msg), 100);
+		snprintf(msg, sizeof(msg), "alive, counter = %d, presses = %lu\r\n",
+				counter, button_count);
 		my_puts(msg);
 	}
 	/* USER CODE END 3 */
@@ -221,7 +223,7 @@ static void MX_GPIO_Init(void) {
 
 	/*Configure GPIO pin : B1_Pin */
 	GPIO_InitStruct.Pin = B1_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
@@ -232,12 +234,32 @@ static void MX_GPIO_Init(void) {
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
+	/* EXTI interrupt init*/
+	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 	/* USER CODE BEGIN MX_GPIO_Init_2 */
 
 	/* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
+/* Debounce: count a press only if 50 ms passed since the last counted one.
+ * Contact bounce produces extra falling edges within a few ms. */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	static uint32_t last_edge_ms = 0;
+
+	if (GPIO_Pin == B1_Pin) {
+		uint32_t now = HAL_GetTick();
+
+		if (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET
+				&& now - last_edge_ms >= 50) {
+			button_count++;
+		}
+
+		last_edge_ms = now;
+	}
+}
 
 /* USER CODE END 4 */
 
