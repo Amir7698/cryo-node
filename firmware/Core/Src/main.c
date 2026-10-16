@@ -83,6 +83,22 @@ void my_puts(const char *s) {
 	}
 }
 
+#define VREF	    3.3f
+#define ADC_MAX		4095.0f
+#define SHUNT_OHM	150.0f
+#define P_MAX_BAR   10.0f
+
+float adc_to_ma(uint32_t adc) {
+	float volt = adc * VREF / ADC_MAX;
+
+	return volt * 1000 / SHUNT_OHM;
+
+}
+
+float ma_to_bar(float ma) {
+	return (ma - 4.0f) * P_MAX_BAR / 16.0f;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -146,6 +162,23 @@ int main(void) {
 			HAL_ADC_Start(&hadc1);
 			HAL_ADC_PollForConversion(&hadc1, 10);
 			uint32_t adc_value = HAL_ADC_GetValue(&hadc1);
+			float ma = adc_to_ma(adc_value);
+			if (ma < 3.6f) {
+				snprintf(msg, sizeof(msg),
+						"adc=%4lu SENSOR FAULT (open loop)\r\n", adc_value);
+
+			} else if (ma > 21.0f) {
+				snprintf(msg, sizeof(msg), "ADC = %4lu OVERRANGE\r\n",
+						adc_value);
+			} else {
+				float bar = ma_to_bar(ma);
+				int ma100 = (int) (ma * 100);
+				int bar100 = (int) (bar * 100);
+				snprintf(msg, sizeof(msg),
+						"adc=%4lu  %2d.%02d mA  %2d.%02d bar\r\n", adc_value,
+						ma100 / 100, ma100 % 100, bar100 / 100, bar100 % 100);
+			}
+			my_puts(msg);
 
 			snprintf(msg, sizeof(msg),
 					"DAC Value = %4lu & ADC Value = %4lu\r\n", dac_value,
