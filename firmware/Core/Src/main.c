@@ -42,9 +42,11 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 DAC_HandleTypeDef hdac;
 
+TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart2;
@@ -54,16 +56,20 @@ int counter = 5;
 volatile uint32_t button_count = 0;
 volatile uint8_t tick_1s = 0;
 volatile uint8_t tick_1ms = 0;
+#define ADC_BUF_LEN 20
+volatile uint16_t adc_buf[ADC_BUF_LEN];
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_DAC_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -129,16 +135,20 @@ int main(void) {
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
+	MX_DMA_Init();
 	MX_USART2_UART_Init();
 	MX_TIM6_Init();
 	MX_ADC1_Init();
 	MX_DAC_Init();
+	MX_TIM3_Init();
 	/* USER CODE BEGIN 2 */
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 	HAL_TIM_Base_Start_IT(&htim6);
 	HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc_buf, ADC_BUF_LEN);
+	HAL_TIM_Base_Start(&htim3);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -146,7 +156,6 @@ int main(void) {
 	while (1) {
 		/* USER CODE END WHILE */
 
-		/* USER CODE BEGIN 3 */
 		if (tick_1s) {
 			static uint32_t dac_value = 0;
 			tick_1s = 0;
@@ -157,11 +166,16 @@ int main(void) {
 //			snprintf(msg, sizeof(msg), "alive, counter = %d, presses = %lu\r\n",
 //					counter, button_count);
 //			my_puts(msg);
-			HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value);
 
-			HAL_ADC_Start(&hadc1);
-			HAL_ADC_PollForConversion(&hadc1, 10);
-			uint32_t adc_value = HAL_ADC_GetValue(&hadc1);
+//			HAL_ADC_Start(&hadc1);
+//			HAL_ADC_PollForConversion(&hadc1, 10);
+//			uint32_t adc_value = HAL_ADC_GetValue(&hadc1);
+			uint32_t sum = 0;
+			for (int i = 0; i < ADC_BUF_LEN; i++) {
+				sum += adc_buf[i];
+
+			}
+			uint32_t adc_value = sum / ADC_BUF_LEN;
 			float ma = adc_to_ma(adc_value);
 			if (ma < 3.6f) {
 				snprintf(msg, sizeof(msg),
@@ -184,14 +198,15 @@ int main(void) {
 					"DAC Value = %4lu & ADC Value = %4lu\r\n", dac_value,
 					adc_value);
 			my_puts(msg);
-
 			dac_value += 512;
 			if (dac_value > 4095) {
 				dac_value = 0;
 
 			}
+			HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value);
 
 		}
+		/* USER CODE BEGIN 3 */
 	}
 	/* USER CODE END 3 */
 }
@@ -265,11 +280,11 @@ static void MX_ADC1_Init(void) {
 	hadc1.Init.ScanConvMode = DISABLE;
 	hadc1.Init.ContinuousConvMode = DISABLE;
 	hadc1.Init.DiscontinuousConvMode = DISABLE;
-	hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-	hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+	hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+	hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
 	hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
 	hadc1.Init.NbrOfConversion = 1;
-	hadc1.Init.DMAContinuousRequests = DISABLE;
+	hadc1.Init.DMAContinuousRequests = ENABLE;
 	hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
 	if (HAL_ADC_Init(&hadc1) != HAL_OK) {
 		Error_Handler();
@@ -323,6 +338,48 @@ static void MX_DAC_Init(void) {
 	/* USER CODE BEGIN DAC_Init 2 */
 
 	/* USER CODE END DAC_Init 2 */
+
+}
+
+/**
+ * @brief TIM3 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_TIM3_Init(void) {
+
+	/* USER CODE BEGIN TIM3_Init 0 */
+
+	/* USER CODE END TIM3_Init 0 */
+
+	TIM_ClockConfigTypeDef sClockSourceConfig = { 0 };
+	TIM_MasterConfigTypeDef sMasterConfig = { 0 };
+
+	/* USER CODE BEGIN TIM3_Init 1 */
+
+	/* USER CODE END TIM3_Init 1 */
+	htim3.Instance = TIM3;
+	htim3.Init.Prescaler = 84 - 1;
+	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim3.Init.Period = 1000 - 1;
+	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_Base_Init(&htim3) != HAL_OK) {
+		Error_Handler();
+	}
+	sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+	if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK) {
+		Error_Handler();
+	}
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig)
+			!= HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN TIM3_Init 2 */
+
+	/* USER CODE END TIM3_Init 2 */
 
 }
 
@@ -390,6 +447,21 @@ static void MX_USART2_UART_Init(void) {
 	/* USER CODE BEGIN USART2_Init 2 */
 
 	/* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+ * Enable DMA controller clock
+ */
+static void MX_DMA_Init(void) {
+
+	/* DMA controller clock enable */
+	__HAL_RCC_DMA2_CLK_ENABLE();
+
+	/* DMA interrupt init */
+	/* DMA2_Stream0_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
