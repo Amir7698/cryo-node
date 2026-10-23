@@ -56,8 +56,11 @@ int counter = 5;
 volatile uint32_t button_count = 0;
 volatile uint8_t tick_1s = 0;
 volatile uint8_t tick_1ms = 0;
-#define ADC_BUF_LEN 20
+#define ADC_BUF_LEN 40
 volatile uint16_t adc_buf[ADC_BUF_LEN];
+
+volatile uint32_t adc_avg = 0;
+volatile uint32_t adc_halves = 0;
 
 /* USER CODE END PV */
 
@@ -170,12 +173,13 @@ int main(void) {
 //			HAL_ADC_Start(&hadc1);
 //			HAL_ADC_PollForConversion(&hadc1, 10);
 //			uint32_t adc_value = HAL_ADC_GetValue(&hadc1);
-			uint32_t sum = 0;
-			for (int i = 0; i < ADC_BUF_LEN; i++) {
-				sum += adc_buf[i];
-
-			}
-			uint32_t adc_value = sum / ADC_BUF_LEN;
+//			uint32_t sum = 0;
+//			for (int i = 0; i < ADC_BUF_LEN; i++) {
+//				sum += adc_buf[i];
+//
+//			}
+			uint32_t adc_value = adc_avg;
+//			uint32_t adc_value = sum / ADC_BUF_LEN;
 			float ma = adc_to_ma(adc_value);
 			if (ma < 3.6f) {
 				snprintf(msg, sizeof(msg),
@@ -510,6 +514,30 @@ static void MX_GPIO_Init(void) {
 /* USER CODE BEGIN 4 */
 /* Debounce: count a press when the pin is low and no edge (press or release)
  * happened in the last 50 ms. Bounce on both press and release is ignored. */
+
+static uint32_t average(const volatile uint16_t *p, int n) {
+	uint32_t sum = 0;
+
+	for (int i = 0; i < n; i++) {
+		sum += p[i];
+	}
+	return sum / n;
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
+
+	if (hadc == &hadc1) {
+		adc_avg = average(adc_buf, ADC_BUF_LEN / 2);
+		adc_halves++;
+	}
+
+}
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+	if (hadc == &hadc1) {
+		adc_avg = average(&adc_buf[ADC_BUF_LEN / 2], ADC_BUF_LEN / 2);
+		adc_halves++;
+	}
+}
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	static uint32_t last_edge_ms = 0;
 
