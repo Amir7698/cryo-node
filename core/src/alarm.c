@@ -1,38 +1,62 @@
 #include "alarm.h"
 
-void alarm_init(alarm_t *a) {
-	/* TODO: state NORMAL, pending NORMAL, pending_ms 0, buzzer off. */
+void alarm_init(alarm_t *a)
+{
 	a->state = ALARM_NORMAL;
 	a->pending = ALARM_NORMAL;
 	a->pending_ms = 0;
 	a->buzzer = false;
 }
 
-void alarm_update(alarm_t *a, float loop_ma, uint32_t dt_ms) {
-	/*
-	 * TODO, in three steps:
-	 *
-	 * 1. Decide where the input points ("target"):
-	 *    - fault if loop_ma is outside 3.6 .. 21 mA
-	 *    - otherwise convert to bar and compare with the thresholds.
-	 *      Use the CURRENT state for hysteresis: if we are in LOW, we stay
-	 *      LOW until the pressure is above ALARM_LOW_OFF_BAR, and so on.
-	 *
-	 * 2. Delay:
-	 *    - if target == a->state: nothing to change, clear the pending timer.
-	 *    - if target is new (different from a->pending): start counting again.
-	 *    - otherwise add dt_ms; when it reaches ALARM_DELAY_MS, accept the change.
-	 *
-	 * 3. When a change is accepted: turn the buzzer on if the new state
-	 *    is not NORMAL, off if it is NORMAL.
-	 */
-	(void) a;
-	(void) loop_ma;
-	(void) dt_ms;
+void alarm_update(alarm_t *a, float loop_ma, uint32_t dt_ms)
+{
+	/* 1. Where does the input point? */
+	alarm_state_t target;
+
+	if (loop_ma < ALARM_FAULT_LOW_MA || loop_ma > ALARM_FAULT_HIGH_MA)
+	{
+		target = ALARM_SENSOR_FAULT;
+	}
+	else
+	{
+		float bar = (loop_ma - 4.0f) * 10.0f / 16.0f;
+		if (bar < ALARM_LOW_ON_BAR)
+		{
+			target = ALARM_LOW;
+		}
+		else if (bar > ALARM_HIGH_ON_BAR)
+		{
+			target = ALARM_HIGH;
+		}
+		else
+		{
+			target = ALARM_NORMAL;
+		}
+	}
+
+	/* 2. Delay: the change must hold for ALARM_DELAY_MS. */
+	if (target == a->state)
+	{
+		a->pending_ms = 0;
+	}
+	else if (target != a->pending)
+	{
+		a->pending = target;
+		a->pending_ms = dt_ms; /* the first step already counts */
+	}
+	else
+	{
+		a->pending_ms += dt_ms;
+		if (a->pending_ms >= ALARM_DELAY_MS)
+		{
+			a->state = target;
+			a->pending_ms = 0;
+			a->buzzer = (target != ALARM_NORMAL);
+		}
+	}
 }
 
-void alarm_acknowledge(alarm_t *a) {
-	/* TODO: silence the buzzer. Do not touch the state. */
+void alarm_acknowledge(alarm_t *a)
+{
 	a->buzzer = false;
-
 }

@@ -54,6 +54,38 @@ static void test_ack_silences_buzzer(void)
 	CHECK(a.state == ALARM_LOW);
 }
 
+/* Low pressure must hold for 2 s before the alarm is accepted. */
+static void test_low_needs_two_seconds(void)
+{
+	alarm_t a;
+	alarm_init(&a);
+
+	feed(&a, bar_to_ma(3.0f), 1900);    /* 3.0 bar for 1.9 s */
+	CHECK(a.state == ALARM_NORMAL);     /* not yet */
+
+	feed(&a, bar_to_ma(3.0f), 100);     /* 0.1 s more: 2.0 s in total */
+	CHECK(a.state == ALARM_LOW);        /* now */
+}
+
+/* Alarm turns the buzzer on, ack silences it, a NEW alarm turns it on again. */
+static void test_buzzer_rearms_on_new_alarm(void)
+{
+	alarm_t a;
+	alarm_init(&a);
+
+	feed(&a, bar_to_ma(3.0f), 2000);    /* low pressure */
+	CHECK(a.state == ALARM_LOW);
+	CHECK(a.buzzer == true);
+
+	alarm_acknowledge(&a);              /* nurse presses the button */
+	CHECK(a.buzzer == false);
+	CHECK(a.state == ALARM_LOW);
+
+	feed(&a, 2.0f, 2000);               /* wire breaks: 2 mA */
+	CHECK(a.state == ALARM_SENSOR_FAULT);
+	CHECK(a.buzzer == true);            /* new alarm, sound again */
+}
+
 /*
  * TODO: write one function per rule in alarm.h, for example:
  *   - 4.0 bar for 10 s stays NORMAL
@@ -70,8 +102,8 @@ int main(void)
 {
 	test_starts_normal_and_quiet();
 	test_ack_silences_buzzer();
-	(void)feed;
-	(void)bar_to_ma;
+	test_low_needs_two_seconds();
+	test_buzzer_rearms_on_new_alarm();
 
 	if (failures == 0)
 	{
