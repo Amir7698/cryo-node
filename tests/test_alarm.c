@@ -86,6 +86,45 @@ static void test_buzzer_rearms_on_new_alarm(void)
 	CHECK(a.buzzer == true);            /* new alarm, sound again */
 }
 
+/* In LOW, 3.3 bar is not enough to clear it; 3.5 bar is. */
+static void test_low_hysteresis(void)
+{
+	alarm_t a;
+	alarm_init(&a);
+
+	feed(&a, bar_to_ma(3.0f), 2000);
+	CHECK(a.state == ALARM_LOW);
+
+	feed(&a, bar_to_ma(3.3f), 10000);   /* above 3.2 but below 3.4 */
+	CHECK(a.state == ALARM_LOW);
+
+	feed(&a, bar_to_ma(3.5f), 2000);    /* above 3.4 */
+	CHECK(a.state == ALARM_NORMAL);
+	CHECK(a.buzzer == false);
+}
+
+/* A short dip (1 s) must never raise the alarm. */
+static void test_short_dip_is_ignored(void)
+{
+	alarm_t a;
+	alarm_init(&a);
+
+	feed(&a, bar_to_ma(3.0f), 1000);
+	feed(&a, bar_to_ma(4.0f), 5000);
+	CHECK(a.state == ALARM_NORMAL);
+	CHECK(a.buzzer == false);
+}
+
+/* A broken wire is a sensor fault, not low pressure. */
+static void test_open_loop_is_sensor_fault(void)
+{
+	alarm_t a;
+	alarm_init(&a);
+
+	feed(&a, 2.0f, 2000);
+	CHECK(a.state == ALARM_SENSOR_FAULT);
+}
+
 /*
  * TODO: write one function per rule in alarm.h, for example:
  *   - 4.0 bar for 10 s stays NORMAL
@@ -104,6 +143,9 @@ int main(void)
 	test_ack_silences_buzzer();
 	test_low_needs_two_seconds();
 	test_buzzer_rearms_on_new_alarm();
+	test_low_hysteresis();
+	test_short_dip_is_ignored();
+	test_open_loop_is_sensor_fault();
 
 	if (failures == 0)
 	{

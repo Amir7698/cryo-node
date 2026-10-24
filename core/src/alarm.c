@@ -20,11 +20,16 @@ void alarm_update(alarm_t *a, float loop_ma, uint32_t dt_ms)
 	else
 	{
 		float bar = (loop_ma - 4.0f) * 10.0f / 16.0f;
-		if (bar < ALARM_LOW_ON_BAR)
+
+		/* Hysteresis: once in an alarm, it takes a clearer recovery to leave it. */
+		float low_limit = (a->state == ALARM_LOW) ? ALARM_LOW_OFF_BAR : ALARM_LOW_ON_BAR;
+		float high_limit = (a->state == ALARM_HIGH) ? ALARM_HIGH_OFF_BAR : ALARM_HIGH_ON_BAR;
+
+		if (bar < low_limit)
 		{
 			target = ALARM_LOW;
 		}
-		else if (bar > ALARM_HIGH_ON_BAR)
+		else if (bar > high_limit)
 		{
 			target = ALARM_HIGH;
 		}
