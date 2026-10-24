@@ -24,3 +24,12 @@ __pycache__/
 
 # graphify knowledge graph (local tool output)
 graphify-out/
+.graphifyignore
+
+# Local AI assistant config
+.claude/
+CLAUDE.md
+
+# Local Codex project instructions
+.codex/
+AGENTS.md
