@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include "alarm.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,6 +62,24 @@ volatile uint16_t adc_buf[ADC_BUF_LEN];
 
 volatile uint32_t adc_avg = 0;
 volatile uint32_t adc_halves = 0;
+alarm_t alarm;
+volatile uint8_t tick_100ms = 0;
+volatile uint8_t ack_request = 0; /* set by the button ISR, handled in the main loop */
+
+/* Simulated transmitter: each step holds for SCENARIO_STEP_S seconds.
+ * DAC code = (4 mA + bar * 1.6 mA) * 150 ohm / 3.3 V * 4095 */
+#define SCENARIO_STEP_S 5
+static const struct {
+	uint16_t dac;
+	const char *what;
+} scenario[] = { { 1936, "4.0 bar, normal" }, { 1638, "3.0 bar, low" }, { 1727,
+		"3.3 bar, still low (hysteresis)" }, { 1817, "3.6 bar, low clears" }, {
+		2293, "5.2 bar, high" }, { 1936, "4.0 bar, normal" },
+		{ 0, "wire broken" }, };
+#define SCENARIO_LEN (sizeof(scenario) / sizeof(scenario[0]))
+
+static const char *const state_name[] = { "NORMAL", "LOW", "HIGH",
+		"SENSOR_FAULT" };
 
 /* USER CODE END PV */
 
@@ -152,6 +171,7 @@ int main(void) {
 	HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc_buf, ADC_BUF_LEN);
 	HAL_TIM_Base_Start(&htim3);
+	alarm_init(&alarm);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -159,58 +179,61 @@ int main(void) {
 	while (1) {
 		/* USER CODE END WHILE */
 
-		if (tick_1s) {
-			static uint32_t dac_value = 0;
-			tick_1s = 0;
-			HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
-
-			counter++;
-			char msg[64];
-//			snprintf(msg, sizeof(msg), "alive, counter = %d, presses = %lu\r\n",
-//					counter, button_count);
-//			my_puts(msg);
-
-//			HAL_ADC_Start(&hadc1);
-//			HAL_ADC_PollForConversion(&hadc1, 10);
-//			uint32_t adc_value = HAL_ADC_GetValue(&hadc1);
-//			uint32_t sum = 0;
-//			for (int i = 0; i < ADC_BUF_LEN; i++) {
-//				sum += adc_buf[i];
-//
-//			}
-			uint32_t adc_value = adc_avg;
-//			uint32_t adc_value = sum / ADC_BUF_LEN;
-			float ma = adc_to_ma(adc_value);
-			if (ma < 3.6f) {
-				snprintf(msg, sizeof(msg),
-						"adc=%4lu SENSOR FAULT (open loop)\r\n", adc_value);
-
-			} else if (ma > 21.0f) {
-				snprintf(msg, sizeof(msg), "ADC = %4lu OVERRANGE\r\n",
-						adc_value);
-			} else {
-				float bar = ma_to_bar(ma);
-				int ma100 = (int) (ma * 100);
-				int bar100 = (int) (bar * 100);
-				snprintf(msg, sizeof(msg),
-						"adc=%4lu  %2d.%02d mA  %2d.%02d bar\r\n", adc_value,
-						ma100 / 100, ma100 % 100, bar100 / 100, bar100 % 100);
-			}
-			my_puts(msg);
-
-			snprintf(msg, sizeof(msg),
-					"DAC Value = %4lu & ADC Value = %4lu\r\n", dac_value,
-					adc_value);
-			my_puts(msg);
-			dac_value += 512;
-			if (dac_value > 4095) {
-				dac_value = 0;
-
-			}
-			HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_value);
-
-		}
 		/* USER CODE BEGIN 3 */
+
+		/* Blue button: acknowledge the alarm (silence only, state stays). */
+		if (ack_request) {
+			ack_request = 0;
+			alarm_acknowledge(&alarm);
+		}
+
+		/* Every 100 ms: run the alarm logic and drive the LED. */
+		if (tick_100ms) {
+			static uint32_t led_tick = 0;
+			tick_100ms = 0;
+			alarm_update(&alarm, adc_to_ma(adc_avg), 100);
+
+			/* LED: slow blink = normal, fast = pressure alarm,
+			 * medium = sensor fault, steady on = acknowledged. */
+			led_tick++;
+			uint32_t period;
+			if (alarm.state == ALARM_NORMAL) {
+				period = 5; /* toggle every 500 ms */
+			} else if (!alarm.buzzer) {
+				period = 0; /* acknowledged: steady on */
+			} else if (alarm.state == ALARM_SENSOR_FAULT) {
+				period = 2; /* toggle every 200 ms */
+			} else {
+				period = 1; /* toggle every 100 ms */
+			}
+			if (period == 0) {
+				HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+			} else if (led_tick % period == 0) {
+				HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+			}
+		}
+
+		/* Every second: step the simulated sensor and print one status line. */
+		if (tick_1s) {
+			static uint32_t seconds = 0;
+			tick_1s = 0;
+
+			uint32_t step = (seconds / SCENARIO_STEP_S) % SCENARIO_LEN;
+			HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R,
+					scenario[step].dac);
+
+			char msg[96];
+			int bar100 = (int) (ma_to_bar(adc_to_ma(adc_avg)) * 100);
+			if (bar100 < 0) {
+				bar100 = 0;
+			}
+			snprintf(msg, sizeof(msg),
+					"t=%3lus  %2d.%02d bar  %-12s buzzer=%d  [%s]\r\n", seconds,
+					bar100 / 100, bar100 % 100, state_name[alarm.state],
+					alarm.buzzer, scenario[step].what);
+			my_puts(msg);
+			seconds++;
+		}
 	}
 	/* USER CODE END 3 */
 }
@@ -302,8 +325,11 @@ static void MX_ADC1_Init(void) {
 	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) {
 		Error_Handler();
 	}
-	/* USER CODE BEGIN ADC1_Init 2 */
-
+//  /* USER CODE BEGIN ADC1_Init 2 */
+//	sConfig.Channel = ADC_CHANNEL_4; /* TEST: read PA4 (DAC pin) directly */
+//	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+//	sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES; /* TEST: give it more time */
+//	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 	/* USER CODE END ADC1_Init 2 */
 
 }
@@ -335,7 +361,7 @@ static void MX_DAC_Init(void) {
 	/** DAC channel OUT1 config
 	 */
 	sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
-	sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+	sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_DISABLE;
 	if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK) {
 		Error_Handler();
 	}
@@ -512,9 +538,6 @@ static void MX_GPIO_Init(void) {
 }
 
 /* USER CODE BEGIN 4 */
-/* Debounce: count a press when the pin is low and no edge (press or release)
- * happened in the last 50 ms. Bounce on both press and release is ignored. */
-
 static uint32_t average(const volatile uint16_t *p, int n) {
 	uint32_t sum = 0;
 
@@ -538,6 +561,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 		adc_halves++;
 	}
 }
+/* Debounce: count a press when the pin is low and no edge (press or release)
+ * happened in the last 50 ms. Bounce on both press and release is ignored.
+ * A counted press asks the main loop to acknowledge the alarm. */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	static uint32_t last_edge_ms = 0;
 
@@ -547,6 +573,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		if (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET
 				&& now - last_edge_ms >= 50) {
 			button_count++;
+			ack_request = 1;
 		}
 
 		last_edge_ms = now;
@@ -560,6 +587,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim6) {
 		tick_1ms = 1;          // every interrupt = 1 ms
 		ms++;
+		if (ms % 100 == 0) {
+			tick_100ms = 1;
+		}
 		if (ms >= 1000) {      // 1000 interrupts = 1 s
 			ms = 0;
 			tick_1s = 1;
