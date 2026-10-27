@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>cryo_node_fw</name>
+	<name>pressure_alarm_fw</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -31,7 +31,7 @@
 	</natures>
 	<linkedResources>
 		<link>
-			<name>cryo_core</name>
+			<name>alarm_core</name>
 			<type>2</type>
 			<locationURI>PARENT-1-PROJECT_LOC/core</locationURI>
 		</link>

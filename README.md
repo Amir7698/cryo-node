@@ -1,6 +1,6 @@
-# cryo-node
+# pressure-alarm-node
 
-STM32 firmware for a small monitoring node, like the ones used on medical gas lines and cryogenic storage tanks: it reads line pressure from a 4–20 mA transmitter, detects sensor faults, and raises alarms with delay, hysteresis and a silence button.
+STM32 firmware for a small monitoring node, like the ones used on medical and industrial gas lines: it reads line pressure from a 4–20 mA transmitter, detects sensor faults, and raises alarms with delay, hysteresis and a silence button.
 
 Hardware: NUCLEO-F446RE (Cortex-M4F, 84 MHz). The pressure transmitter is simulated on the board itself (DAC → jumper → ADC).
 
@@ -114,7 +114,7 @@ Needs `gcc` on the PATH (tested with MinGW gcc 6.3). Built with `-Wall -Wextra -
 ## Build and flash
 
 1. Open the `firmware/` folder in STM32CubeIDE 1.19 (File → Open Projects from File System).
-2. Build: Project → Build Project. `core/` is linked into the project as the folder `cryo_core`.
+2. Build: Project → Build Project. `core/` is linked into the project as the folder `alarm_core`.
 3. Flash and run: Run (green arrow). Debug: the bug icon.
 4. Open a serial terminal on the ST-LINK COM port at 115200 8N1.
 
