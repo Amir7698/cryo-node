@@ -33,7 +33,7 @@ static float bar_to_ma(float bar)
 	return 4.0f + bar * 1.6f;
 }
 
-/* Example test, as a pattern for the others. */
+/* After init: NORMAL, buzzer off. */
 static void test_starts_normal_and_quiet(void)
 {
 	alarm_t a;
@@ -124,18 +124,6 @@ static void test_open_loop_is_sensor_fault(void)
 	feed(&a, 2.0f, 2000);
 	CHECK(a.state == ALARM_SENSOR_FAULT);
 }
-
-/*
- * TODO: write one function per rule in alarm.h, for example:
- *   - 4.0 bar for 10 s stays NORMAL
- *   - 3.0 bar for 1.9 s is still NORMAL, for 2.0 s becomes LOW, buzzer on
- *   - in LOW, 3.3 bar for 10 s stays LOW (hysteresis), 3.5 bar clears it
- *   - a dip to 3.0 bar for 1 s, then back to 4.0 bar, never alarms
- *   - 2.0 mA for 2 s becomes SENSOR_FAULT (not LOW)
- *   - acknowledge silences the buzzer but keeps the state
- *   - after acknowledge, a new alarm turns the buzzer on again
- * Then call each one from main() below.
- */
 
 int main(void)
 {
